@@ -18,10 +18,24 @@ package collector
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jaypipes/ghw"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+// Known GPU vendor IDs (whitelist) - only these vendors are considered real GPUs
+var gpuVendorWhitelist = map[string]bool{
+	"10de": true, // NVIDIA Corporation
+	"1002": true, // AMD/ATI
+	"8086": true, // Intel Corporation (for discrete GPUs like Arc)
+}
+
+// Known BMC/Management graphics vendor IDs (blacklist for extra safety)
+var bmcVendorBlacklist = map[string]bool{
+	"1a03": true, // ASPEED Technology Inc.
+	"102b": true, // Matrox Electronics Systems Ltd.
+}
 
 type gpuCollector struct {
 	logger *slog.Logger
@@ -57,11 +71,31 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
+		// Get vendor ID (lowercase, no 0x prefix)
+		vendorID := strings.ToLower(card.DeviceInfo.Vendor.ID)
+
+		// Filter out BMC/Management graphics (blacklist)
+		if bmcVendorBlacklist[vendorID] {
+			c.logger.Debug("Skipping BMC graphics device",
+				"vendor", card.DeviceInfo.Vendor.Name,
+				"vendorID", vendorID,
+				"address", card.Address)
+			continue
+		}
+
+		// Only allow known GPU vendors (whitelist)
+		if !gpuVendorWhitelist[vendorID] {
+			c.logger.Debug("Skipping unknown vendor device",
+				"vendor", card.DeviceInfo.Vendor.Name,
+				"vendorID", vendorID,
+				"address", card.Address)
+			continue
+		}
+
 		gpuCount++
 
 		// Extract information from ghw
 		busID := card.Address
-		vendorID := card.DeviceInfo.Vendor.ID
 		deviceID := card.DeviceInfo.Product.ID
 		vendorName := card.DeviceInfo.Vendor.Name
 		productName := card.DeviceInfo.Product.Name
