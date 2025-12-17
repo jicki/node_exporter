@@ -3,8 +3,6 @@ go:
     # .promu.yml should also be updated.
     version: 1.25
     cgo: true
-    go_env:
-        GOPROXY: https://goproxy.cn,https://goproxy.io,direct
 repository:
     path: github.com/prometheus/node_exporter
 build:

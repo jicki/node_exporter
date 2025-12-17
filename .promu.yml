@@ -2,8 +2,6 @@ go:
     # Whenever the Go version is updated here, .circle/config.yml and
     # .promu-cgo.yml should also be updated.
     version: 1.25
-    go_env:
-        GOPROXY: https://goproxy.cn,https://goproxy.io,direct
 repository:
     path: github.com/prometheus/node_exporter
 build:
