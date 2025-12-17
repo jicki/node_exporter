@@ -150,12 +150,8 @@ crossbuild: promu
 	@echo ">> crossbuilding binaries"
 	$(PROMU) crossbuild
 
-.PHONY: docker-clean
-docker-clean:
-	$(foreach ARCH,$(DOCKER_ARCHS),docker rmi "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(SANITIZED_DOCKER_IMAGE_TAG)";)
-
 .PHONY: docker-all
-docker-all: crossbuild common-docker common-docker-publish common-docker-manifest docker-clean
+docker-all: crossbuild common-docker common-docker-publish common-docker-manifest
 
 .PHONY: promtool
 promtool: $(PROMTOOL)
