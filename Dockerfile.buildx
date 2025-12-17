@@ -1,0 +1,31 @@
+# Build stage - compile for target platform
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Set Go proxy for China
+ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+
+# Build binary for target platform
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o node_exporter .
+
+# Runtime stage
+FROM alpine:latest
+
+LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
+
+COPY --from=builder /app/node_exporter /bin/node_exporter
+
+EXPOSE 9100
+USER nobody
+ENTRYPOINT ["/bin/node_exporter"]
