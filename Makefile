@@ -150,8 +150,22 @@ crossbuild: promu
 	@echo ">> crossbuilding binaries"
 	$(PROMU) crossbuild
 
-.PHONY: docker-all
-docker-all: crossbuild common-docker common-docker-publish common-docker-manifest
+.PHONY: docker
+docker: crossbuild common-docker common-docker-publish common-docker-manifest
+
+# Docker buildx multi-arch build (builds and pushes in one step)
+BUILDX_PLATFORMS ?= linux/amd64,linux/arm64
+DOCKER_BUILDX_TAG ?= $(DOCKER_IMAGE_TAG)
+
+.PHONY: docker-build
+docker-build:
+	@echo ">> building and pushing multi-arch docker image with buildx"
+	docker buildx build \
+		--platform $(BUILDX_PLATFORMS) \
+		--tag $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_BUILDX_TAG) \
+		--file Dockerfile.buildx \
+		--push \
+		.
 
 .PHONY: promtool
 promtool: $(PROMTOOL)
