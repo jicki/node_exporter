@@ -24,3 +24,5 @@ crossbuild:
         - darwin/arm64
         - netbsd/amd64
         - netbsd/386
+    builder:
+        image: reg.deeproute.ai/deeproute-public/zzh/golang-builder:1.25-main

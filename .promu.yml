@@ -21,3 +21,5 @@ crossbuild:
     platforms:
         - linux
         - openbsd/amd64
+    builder:
+        image: reg.deeproute.ai/deeproute-public/zzh/golang-builder:1.25-main
