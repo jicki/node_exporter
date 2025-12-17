@@ -16,32 +16,15 @@
 package collector
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 
+	"github.com/jaypipes/ghw"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/procfs/sysfs"
 )
 
-// Known GPU vendor IDs (whitelist approach for better accuracy)
-var gpuVendorIDs = map[uint32]string{
-	0x10de: "NVIDIA Corporation",
-	0x1002: "AMD/ATI",
-	0x8086: "Intel Corporation", // Intel integrated/discrete GPUs
-}
-
-// Known BMC/Management graphics vendor IDs (blacklist for extra safety)
-var bmcVendorIDs = map[uint32]bool{
-	0x1a03: true, // ASPEED Technology Inc.
-	0x102b: true, // Matrox Electronics Systems Ltd.
-}
-
 type gpuCollector struct {
-	fs          sysfs.FS
-	logger      *slog.Logger
-	pciProvider *pciIDProvider
+	logger *slog.Logger
 }
 
 func init() {
@@ -50,90 +33,51 @@ func init() {
 
 // NewGPUCollector returns a new Collector exposing GPU stats.
 func NewGPUCollector(logger *slog.Logger) (Collector, error) {
-	fs, err := sysfs.NewFS(*sysPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open sysfs: %w", err)
-	}
-
-	c := &gpuCollector{
-		fs:     fs,
+	return &gpuCollector{
 		logger: logger,
-	}
-
-	// Initialize pciProvider for name resolution if pci.ids file is available
-	if *pciIdsFile != "" || len(pciIdsPaths) > 0 {
-		c.pciProvider = newPCIIDProvider(logger, pciIdsPaths, *pciIdsFile)
-	}
-
-	return c, nil
+	}, nil
 }
 
 func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
-	devices, err := c.fs.PciDevices()
+	// Use ghw with rootfs support
+	gpu, err := ghw.GPU(ghw.WithChroot(*rootfsPath))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			c.logger.Debug("PCI device not found, skipping")
-			return ErrNoData
-		}
-		return fmt.Errorf("error obtaining PCI device info: %w", err)
+		c.logger.Debug("Failed to get GPU info", "error", err)
+		return ErrNoData
 	}
 
-	var gpuMetrics []prometheus.Metric
 	gpuCount := 0
+	var gpuMetrics []prometheus.Metric
 
-	for _, device := range devices {
-		// Class 0x03 is Display Controller (VGA, 3D, etc.)
-		if device.Class>>16 != 0x03 {
-			continue
-		}
-
-		// Check blacklist (BMC vendors) - skip these
-		if bmcVendorIDs[device.Vendor] {
-			c.logger.Debug("Skipping BMC graphics device",
-				"vendor", fmt.Sprintf("0x%04x", device.Vendor),
-				"device", fmt.Sprintf("0x%04x", device.Device),
-				"location", device.Location.String())
-			continue
-		}
-
-		// Check if it's a known GPU vendor (whitelist)
-		if _, known := gpuVendorIDs[device.Vendor]; !known {
-			// For unknown Class 0x03 devices, log and skip
-			c.logger.Debug("Skipping unknown display controller",
-				"vendor", fmt.Sprintf("0x%04x", device.Vendor),
-				"device", fmt.Sprintf("0x%04x", device.Device),
-				"location", device.Location.String())
+	for _, card := range gpu.GraphicsCards {
+		if card.DeviceInfo == nil {
+			c.logger.Debug("Skipping GPU card with no device info",
+				"address", card.Address,
+				"index", card.Index)
 			continue
 		}
 
 		gpuCount++
 
-		vendorID := fmt.Sprintf("0x%04x", device.Vendor)
-		deviceID := fmt.Sprintf("0x%04x", device.Device)
-		busID := device.Location.String()
+		// Extract information from ghw
+		busID := card.Address
+		vendorID := card.DeviceInfo.Vendor.ID
+		deviceID := card.DeviceInfo.Product.ID
+		vendorName := card.DeviceInfo.Vendor.Name
+		productName := card.DeviceInfo.Product.Name
 
-		var vendorName, deviceName string
-		if c.pciProvider != nil {
-			vendorName = c.pciProvider.getVendorName(vendorID)
-			deviceName = c.pciProvider.getDeviceName(vendorID, deviceID)
+		// Fallback for empty names
+		if vendorName == "" {
+			vendorName = vendorID
 		}
-		// Fallback: use known vendor name if pci.ids lookup failed
-		if vendorName == "" || vendorName == vendorID[2:] {
-			if name, ok := gpuVendorIDs[device.Vendor]; ok {
-				vendorName = name
-			} else {
-				vendorName = vendorID
-			}
-		}
-		// Fallback for device name
-		if deviceName == "" || deviceName == deviceID[2:] {
-			deviceName = deviceID
+		if productName == "" {
+			productName = deviceID
 		}
 
 		c.logger.Debug("Found GPU",
 			"vendor", vendorName,
-			"device", deviceName,
-			"location", busID)
+			"product", productName,
+			"address", busID)
 
 		gpuMetrics = append(gpuMetrics, prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
@@ -143,7 +87,7 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			),
 			prometheus.GaugeValue,
 			1,
-			busID, vendorName, deviceName, vendorID, deviceID,
+			busID, vendorName, productName, fmt.Sprintf("0x%s", vendorID), fmt.Sprintf("0x%s", deviceID),
 		))
 	}
 
