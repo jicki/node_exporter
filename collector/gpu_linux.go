@@ -25,6 +25,19 @@ import (
 	"github.com/prometheus/procfs/sysfs"
 )
 
+// Known GPU vendor IDs (whitelist approach for better accuracy)
+var gpuVendorIDs = map[uint32]string{
+	0x10de: "NVIDIA Corporation",
+	0x1002: "AMD/ATI",
+	0x8086: "Intel Corporation", // Intel integrated/discrete GPUs
+}
+
+// Known BMC/Management graphics vendor IDs (blacklist for extra safety)
+var bmcVendorIDs = map[uint32]bool{
+	0x1a03: true, // ASPEED Technology Inc.
+	0x102b: true, // Matrox Electronics Systems Ltd.
+}
+
 type gpuCollector struct {
 	fs          sysfs.FS
 	logger      *slog.Logger
@@ -48,7 +61,6 @@ func NewGPUCollector(logger *slog.Logger) (Collector, error) {
 	}
 
 	// Initialize pciProvider for name resolution if pci.ids file is available
-	// We reuse the same flags as pcidevice for consistency
 	if *pciIdsFile != "" || len(pciIdsPaths) > 0 {
 		c.pciProvider = newPCIIDProvider(logger, pciIdsPaths, *pciIdsFile)
 	}
@@ -75,10 +87,22 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
-		// Filter out common BMC/Management Graphic Controllers
-		// 0x1a03: ASPEED Technology Inc.
-		// 0x102b: Matrox Electronics Systems Ltd.
-		if device.Vendor == 0x1a03 || device.Vendor == 0x102b {
+		// Check blacklist (BMC vendors) - skip these
+		if bmcVendorIDs[device.Vendor] {
+			c.logger.Debug("Skipping BMC graphics device",
+				"vendor", fmt.Sprintf("0x%04x", device.Vendor),
+				"device", fmt.Sprintf("0x%04x", device.Device),
+				"location", device.Location.String())
+			continue
+		}
+
+		// Check if it's a known GPU vendor (whitelist)
+		if _, known := gpuVendorIDs[device.Vendor]; !known {
+			// For unknown Class 0x03 devices, log and skip
+			c.logger.Debug("Skipping unknown display controller",
+				"vendor", fmt.Sprintf("0x%04x", device.Vendor),
+				"device", fmt.Sprintf("0x%04x", device.Device),
+				"location", device.Location.String())
 			continue
 		}
 
@@ -92,10 +116,24 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 		if c.pciProvider != nil {
 			vendorName = c.pciProvider.getVendorName(vendorID)
 			deviceName = c.pciProvider.getDeviceName(vendorID, deviceID)
-		} else {
-			vendorName = vendorID
+		}
+		// Fallback: use known vendor name if pci.ids lookup failed
+		if vendorName == "" || vendorName == vendorID[2:] {
+			if name, ok := gpuVendorIDs[device.Vendor]; ok {
+				vendorName = name
+			} else {
+				vendorName = vendorID
+			}
+		}
+		// Fallback for device name
+		if deviceName == "" || deviceName == deviceID[2:] {
 			deviceName = deviceID
 		}
+
+		c.logger.Debug("Found GPU",
+			"vendor", vendorName,
+			"device", deviceName,
+			"location", busID)
 
 		gpuMetrics = append(gpuMetrics, prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
