@@ -66,10 +66,19 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 		return fmt.Errorf("error obtaining PCI device info: %w", err)
 	}
 
+	var gpuMetrics []prometheus.Metric
 	gpuCount := 0
+
 	for _, device := range devices {
 		// Class 0x03 is Display Controller (VGA, 3D, etc.)
 		if device.Class>>16 != 0x03 {
+			continue
+		}
+
+		// Filter out common BMC/Management Graphic Controllers
+		// 0x1a03: ASPEED Technology Inc.
+		// 0x102b: Matrox Electronics Systems Ltd.
+		if device.Vendor == 0x1a03 || device.Vendor == 0x102b {
 			continue
 		}
 
@@ -88,7 +97,7 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			deviceName = deviceID
 		}
 
-		ch <- prometheus.MustNewConstMetric(
+		gpuMetrics = append(gpuMetrics, prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, "gpu", "info"),
 				"Information about the GPU.",
@@ -97,18 +106,24 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue,
 			1,
 			busID, vendorName, deviceName, vendorID, deviceID,
-		)
+		))
 	}
 
-	ch <- prometheus.MustNewConstMetric(
-		prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "gpu", "cards_total"),
-			"Total number of GPU cards detected.",
-			nil, nil,
-		),
-		prometheus.GaugeValue,
-		float64(gpuCount),
-	)
+	// Only expose metrics if GPUs are detected
+	if gpuCount > 0 {
+		for _, m := range gpuMetrics {
+			ch <- m
+		}
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, "gpu", "cards_total"),
+				"Total number of GPU cards detected.",
+				nil, nil,
+			),
+			prometheus.GaugeValue,
+			float64(gpuCount),
+		)
+	}
 
 	return nil
 }

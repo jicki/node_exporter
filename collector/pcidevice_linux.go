@@ -34,6 +34,7 @@ var (
 	pciIdsPaths = []string{
 		"/usr/share/misc/pci.ids",
 		"/usr/share/hwdata/pci.ids",
+		"/var/lib/pciutils/pci.ids",
 	}
 	pciIdsFile = kingpin.Flag("collector.pcidevice.idsfile", "Path to pci.ids file to use for PCI device identification.").String()
 	pciNames   = kingpin.Flag("collector.pcidevice.names", "Enable PCI device name resolution (requires pci.ids file).").Default("false").Bool()
