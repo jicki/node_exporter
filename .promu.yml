@@ -18,8 +18,7 @@ tarball:
         - LICENSE
         - NOTICE
 crossbuild:
+    docker_builder_image: reg.deeproute.ai/deeproute-public/zzh/golang-builder
     platforms:
         - linux
         - openbsd/amd64
-    builder:
-        image: reg.deeproute.ai/deeproute-public/zzh/golang-builder:1.25-main
