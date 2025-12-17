@@ -16,12 +16,10 @@
 package collector
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -142,16 +140,11 @@ var (
 )
 
 type pcideviceCollector struct {
-	fs            sysfs.FS
-	infoDesc      typedDesc
-	logger        *slog.Logger
-	pciVendors    map[string]string
-	pciDevices    map[string]map[string]string
-	pciSubsystems map[string]map[string]string
-	pciClasses    map[string]string
-	pciSubclasses map[string]string
-	pciProgIfs    map[string]string
-	pciNames      bool
+	fs          sysfs.FS
+	infoDesc    typedDesc
+	logger      *slog.Logger
+	pciProvider *pciIDProvider
+	pciNames    bool
 }
 
 func init() {
@@ -165,7 +158,6 @@ func NewPcideviceCollector(logger *slog.Logger) (Collector, error) {
 		return nil, fmt.Errorf("failed to open sysfs: %w", err)
 	}
 
-	// Initialize PCI ID maps
 	c := &pcideviceCollector{
 		fs:       fs,
 		logger:   logger,
@@ -178,7 +170,7 @@ func NewPcideviceCollector(logger *slog.Logger) (Collector, error) {
 			"class_id", "vendor_id", "device_id", "subsystem_vendor_id", "subsystem_device_id", "revision"}...)
 
 	if c.pciNames {
-		c.loadPCIIds()
+		c.pciProvider = newPCIIDProvider(logger, pciIdsPaths, *pciIdsFile)
 		// Add name labels when name resolution is enabled
 		labelNames = append(labelNames, "vendor_name", "device_name", "subsystem_vendor_name", "subsystem_device_name", "class_name")
 	}
@@ -225,12 +217,12 @@ func (c *pcideviceCollector) Update(ch chan<- prometheus.Metric) error {
 		values = append(values, classID, vendorID, deviceID, subsysVendorID, subsysDeviceID, fmt.Sprintf("0x%02x", device.Revision))
 
 		// Add name values if name resolution is enabled
-		if c.pciNames {
-			vendorName := c.getPCIVendorName(vendorID)
-			deviceName := c.getPCIDeviceName(vendorID, deviceID)
-			subsysVendorName := c.getPCIVendorName(subsysVendorID)
-			subsysDeviceName := c.getPCISubsystemName(vendorID, deviceID, subsysVendorID, subsysDeviceID)
-			className := c.getPCIClassName(classID)
+		if c.pciNames && c.pciProvider != nil {
+			vendorName := c.pciProvider.getVendorName(vendorID)
+			deviceName := c.pciProvider.getDeviceName(vendorID, deviceID)
+			subsysVendorName := c.pciProvider.getVendorName(subsysVendorID)
+			subsysDeviceName := c.pciProvider.getSubsystemName(vendorID, deviceID, subsysVendorID, subsysDeviceID)
+			className := c.pciProvider.getClassName(classID)
 
 			values = append(values, vendorName, deviceName, subsysVendorName, subsysDeviceName, className)
 		}
@@ -351,260 +343,4 @@ func (c *pcideviceCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 
 	return nil
-}
-
-// loadPCIIds loads PCI device information from pci.ids file
-func (c *pcideviceCollector) loadPCIIds() {
-	var file *os.File
-	var err error
-
-	c.pciVendors = make(map[string]string)
-	c.pciDevices = make(map[string]map[string]string)
-	c.pciSubsystems = make(map[string]map[string]string)
-	c.pciClasses = make(map[string]string)
-	c.pciSubclasses = make(map[string]string)
-	c.pciProgIfs = make(map[string]string)
-
-	// Use custom pci.ids file if specified
-	if *pciIdsFile != "" {
-		file, err = os.Open(*pciIdsFile)
-		if err != nil {
-			c.logger.Debug("Failed to open PCI IDs file", "file", *pciIdsFile, "error", err)
-			return
-		}
-		c.logger.Debug("Loading PCI IDs from", "file", *pciIdsFile)
-	} else {
-		// Try each possible default path
-		for _, path := range pciIdsPaths {
-			file, err = os.Open(path)
-			if err == nil {
-				c.logger.Debug("Loading PCI IDs from default path", "path", path)
-				break
-			}
-		}
-		if err != nil {
-			c.logger.Debug("Failed to open any default PCI IDs file", "error", err)
-			return
-		}
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	var currentVendor, currentDevice, currentBaseClass, currentSubclass string
-	var inClassContext bool
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Handle class lines (starts with 'C')
-		if strings.HasPrefix(line, "C ") {
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 {
-				classID := strings.TrimSpace(parts[0][1:]) // Remove 'C' prefix
-				className := strings.TrimSpace(parts[1])
-				c.pciClasses[classID] = className
-				currentBaseClass = classID
-				inClassContext = true
-			}
-			continue
-		}
-
-		// Handle subclass lines (single tab after class)
-		if strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "\t\t") && inClassContext {
-			line = strings.TrimPrefix(line, "\t")
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 && currentBaseClass != "" {
-				subclassID := strings.TrimSpace(parts[0])
-				subclassName := strings.TrimSpace(parts[1])
-				// Store as base class + subclass (e.g., "0100" for SCSI storage controller)
-				fullClassID := currentBaseClass + subclassID
-				c.pciSubclasses[fullClassID] = subclassName
-				currentSubclass = fullClassID
-			}
-			continue
-		}
-
-		// Handle programming interface lines (double tab after subclass)
-		if strings.HasPrefix(line, "\t\t") && !strings.HasPrefix(line, "\t\t\t") && inClassContext {
-			line = strings.TrimPrefix(line, "\t\t")
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 && currentSubclass != "" {
-				progIfID := strings.TrimSpace(parts[0])
-				progIfName := strings.TrimSpace(parts[1])
-				// Store as base class + subclass + programming interface (e.g., "010802" for NVM Express)
-				fullClassID := currentSubclass + progIfID
-				c.pciProgIfs[fullClassID] = progIfName
-			}
-			continue
-		}
-
-		// Handle vendor lines (no leading whitespace, not starting with 'C')
-		if !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "C ") {
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 {
-				currentVendor = strings.TrimSpace(parts[0])
-				c.pciVendors[currentVendor] = strings.TrimSpace(parts[1])
-				currentDevice = ""
-				inClassContext = false
-			}
-			continue
-		}
-
-		// Handle device lines (single tab)
-		if strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "\t\t") {
-			line = strings.TrimPrefix(line, "\t")
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 && currentVendor != "" {
-				currentDevice = strings.TrimSpace(parts[0])
-				if c.pciDevices[currentVendor] == nil {
-					c.pciDevices[currentVendor] = make(map[string]string)
-				}
-				c.pciDevices[currentVendor][currentDevice] = strings.TrimSpace(parts[1])
-			}
-			continue
-		}
-
-		// Handle subsystem lines (double tab)
-		if strings.HasPrefix(line, "\t\t") {
-			line = strings.TrimPrefix(line, "\t\t")
-			parts := strings.SplitN(line, "  ", 2)
-			if len(parts) >= 2 && currentVendor != "" && currentDevice != "" {
-				subsysID := strings.TrimSpace(parts[0])
-				subsysName := strings.TrimSpace(parts[1])
-				key := fmt.Sprintf("%s:%s", currentVendor, currentDevice)
-				if c.pciSubsystems[key] == nil {
-					c.pciSubsystems[key] = make(map[string]string)
-				}
-				// Convert subsystem ID from "vendor device" format to "vendor:device" format
-				subsysParts := strings.Fields(subsysID)
-				if len(subsysParts) == 2 {
-					subsysKey := fmt.Sprintf("%s:%s", subsysParts[0], subsysParts[1])
-					c.pciSubsystems[key][subsysKey] = subsysName
-				}
-			}
-		}
-	}
-
-	// Debug summary
-	totalDevices := 0
-	for _, devices := range c.pciDevices {
-		totalDevices += len(devices)
-	}
-	totalSubsystems := 0
-	for _, subsystems := range c.pciSubsystems {
-		totalSubsystems += len(subsystems)
-	}
-
-	c.logger.Debug("Loaded PCI device data",
-		"vendors", len(c.pciVendors),
-		"devices", totalDevices,
-		"subsystems", totalSubsystems,
-		"classes", len(c.pciClasses),
-		"subclasses", len(c.pciSubclasses),
-		"progIfs", len(c.pciProgIfs),
-	)
-}
-
-// getPCIVendorName converts PCI vendor ID to human-readable string using pci.ids
-func (c *pcideviceCollector) getPCIVendorName(vendorID string) string {
-	// Return original ID if name resolution is disabled
-	if !c.pciNames {
-		return vendorID
-	}
-
-	// Remove "0x" prefix if present
-	vendorID = strings.TrimPrefix(vendorID, "0x")
-	vendorID = strings.ToLower(vendorID)
-
-	if name, ok := c.pciVendors[vendorID]; ok {
-		return name
-	}
-	return vendorID // Return ID if name not found
-}
-
-// getPCIDeviceName converts PCI device ID to human-readable string using pci.ids
-func (c *pcideviceCollector) getPCIDeviceName(vendorID, deviceID string) string {
-	// Return original ID if name resolution is disabled
-	if !c.pciNames {
-		return deviceID
-	}
-
-	// Remove "0x" prefix if present
-	vendorID = strings.TrimPrefix(vendorID, "0x")
-	deviceID = strings.TrimPrefix(deviceID, "0x")
-	vendorID = strings.ToLower(vendorID)
-	deviceID = strings.ToLower(deviceID)
-
-	if devices, ok := c.pciDevices[vendorID]; ok {
-		if name, ok := devices[deviceID]; ok {
-			return name
-		}
-	}
-	return deviceID // Return ID if name not found
-}
-
-// getPCISubsystemName converts PCI subsystem ID to human-readable string using pci.ids
-func (c *pcideviceCollector) getPCISubsystemName(vendorID, deviceID, subsysVendorID, subsysDeviceID string) string {
-	// Return original ID if name resolution is disabled
-	if !c.pciNames {
-		return subsysDeviceID
-	}
-
-	// Normalize all IDs
-	vendorID = strings.TrimPrefix(vendorID, "0x")
-	deviceID = strings.TrimPrefix(deviceID, "0x")
-	subsysVendorID = strings.TrimPrefix(subsysVendorID, "0x")
-	subsysDeviceID = strings.TrimPrefix(subsysDeviceID, "0x")
-
-	key := fmt.Sprintf("%s:%s", vendorID, deviceID)
-	subsysKey := fmt.Sprintf("%s:%s", subsysVendorID, subsysDeviceID)
-
-	if subsystems, ok := c.pciSubsystems[key]; ok {
-		if name, ok := subsystems[subsysKey]; ok {
-			return name
-		}
-	}
-	return subsysDeviceID
-}
-
-// getPCIClassName converts PCI class ID to human-readable string using pci.ids
-func (c *pcideviceCollector) getPCIClassName(classID string) string {
-	// Return original ID if name resolution is disabled
-	if !c.pciNames {
-		return classID
-	}
-
-	// Remove "0x" prefix if present and normalize
-	classID = strings.TrimPrefix(classID, "0x")
-	classID = strings.ToLower(classID)
-
-	// Try to find the programming interface first (6 digits: base class + subclass + programming interface)
-	if len(classID) >= 6 {
-		progIf := classID[:6]
-		if className, exists := c.pciProgIfs[progIf]; exists {
-			return className
-		}
-	}
-
-	// Try to find the subclass (4 digits: base class + subclass)
-	if len(classID) >= 4 {
-		subclass := classID[:4]
-		if className, exists := c.pciSubclasses[subclass]; exists {
-			return className
-		}
-	}
-
-	// If not found, try with just the base class (first 2 digits)
-	if len(classID) >= 2 {
-		baseClass := classID[:2]
-		if className, exists := c.pciClasses[baseClass]; exists {
-			return className
-		}
-	}
-
-	// Return the original class ID if not found
-	return "Unknown class (" + classID + ")"
 }
