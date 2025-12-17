@@ -200,9 +200,8 @@ func isGPUDriverLoaded(devicePath string) bool {
 		return false
 	}
 	driverName := filepath.Base(target)
-	// nvidia, nouveau, amdgpu, i915 are valid GPU drivers
-	// vfio-pci means passthrough, not usable by host
-	validDrivers := []string{"nvidia", "nouveau", "amdgpu", "radeon", "i915", "xe"}
+	// Valid GPU drivers: native drivers + vfio-pci for passthrough
+	validDrivers := []string{"nvidia", "nouveau", "amdgpu", "radeon", "i915", "xe", "vfio-pci"}
 	for _, d := range validDrivers {
 		if driverName == d {
 			return true
@@ -232,7 +231,7 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 
 	var gpuMetrics []prometheus.Metric
-	gpuCount := 0
+	modelCounts := make(map[string]int) // Track count per model
 
 	for _, entry := range entries {
 		devicePath := filepath.Join(sysfsPath, entry.Name())
@@ -277,9 +276,11 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			continue
 		}
 
-		gpuCount++
 		busID := entry.Name()
 		productName := getProductName(vendorID, deviceID)
+
+		// Track model count
+		modelCounts[productName]++
 
 		var vendorName string
 		switch vendorID {
@@ -311,19 +312,24 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 
 	// Only expose metrics if GPUs with drivers are detected
-	if gpuCount > 0 {
+	if len(modelCounts) > 0 {
 		for _, m := range gpuMetrics {
 			ch <- m
 		}
-		ch <- prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, "gpu", "cards_total"),
-				"Total number of GPU cards detected.",
-				nil, nil,
-			),
-			prometheus.GaugeValue,
-			float64(gpuCount),
-		)
+
+		// Emit cards_total per model
+		for model, count := range modelCounts {
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "cards_total"),
+					"Total number of GPU cards detected.",
+					[]string{"model"}, nil,
+				),
+				prometheus.GaugeValue,
+				float64(count),
+				model,
+			)
+		}
 	}
 
 	return nil
