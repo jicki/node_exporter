@@ -88,7 +88,7 @@ var nvidiaProducts = map[string]string{
 
 	// GeForce RTX 40 Series (Ada Lovelace)
 	"0x2684": "GeForce RTX 4090",
-	"0x2685": "GeForce RTX 4090 D",
+	"0x2685": "GeForce RTX 4090",
 	"0x2702": "GeForce RTX 4080 SUPER",
 	"0x2704": "GeForce RTX 4080",
 	"0x2705": "GeForce RTX 4070 Ti SUPER",
