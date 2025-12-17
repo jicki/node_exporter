@@ -150,8 +150,8 @@ crossbuild: promu
 	@echo ">> crossbuilding binaries"
 	$(PROMU) crossbuild
 
-.PHONY: docker-all
-docker-all: crossbuild common-docker common-docker-publish common-docker-manifest
+.PHONY: docker-build
+docker-build: crossbuild common-docker common-docker-publish common-docker-manifest
 
 .PHONY: promtool
 promtool: $(PROMTOOL)
