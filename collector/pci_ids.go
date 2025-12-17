@@ -60,9 +60,10 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 	} else {
 		// Try each possible default path
 		for _, path := range paths {
-			file, err = os.Open(path)
+			fullPath := rootfsFilePath(path)
+			file, err = os.Open(fullPath)
 			if err == nil {
-				p.logger.Debug("Loading PCI IDs from default path", "path", path)
+				p.logger.Debug("Loading PCI IDs from default path", "path", fullPath)
 				break
 			}
 		}
