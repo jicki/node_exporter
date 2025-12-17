@@ -1,5 +1,5 @@
 # Build stage - compile for target platform
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM reg.deeproute.ai/deeproute-public/zzh/golang-builder:1.25-base AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -20,7 +20,7 @@ ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o node_exporter .
 
 # Runtime stage
-FROM alpine:latest
+FROM reg.deeproute.ai/deeproute-public/zzh/alpine:3.23
 
 LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
