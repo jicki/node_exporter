@@ -50,13 +50,13 @@ var nvidiaProducts = map[string]string{
 	"0x1e37": "NVIDIA Tesla T4",
 
 	// Data Center - Ampere (A-series)
-	"0x20b0": "NVIDIA A100-PCIE-40GB",
+	"0x20b0": "NVIDIA A100-SXM4-40GB",
 	"0x20b2": "NVIDIA A100-SXM4-40GB",
-	"0x20b5": "NVIDIA A100-PCIE-80GB",
+	"0x20b5": "NVIDIA A100-SXM4-80GB",
 	"0x20b7": "NVIDIA A30",
 	"0x20f1": "NVIDIA A100-SXM4-80GB",
 	"0x20f3": "NVIDIA A800-SXM4-80GB",
-	"0x20f5": "NVIDIA A800-PCIE-80GB",
+	"0x20f5": "NVIDIA A800-SXM4-80GB",
 	"0x2236": "NVIDIA A10",
 	"0x2237": "NVIDIA A10G",
 	"0x25b6": "NVIDIA A16",
