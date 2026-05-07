@@ -104,6 +104,8 @@ node_exporter --collector.pcidevice.idsfile=/path/to/pci.ids
 
 `pci.ids` 中 vendor 行不缩进，device 行需要使用一个 tab 缩进。下面是一个最小示例：
 
+完整的 NVIDIA fallback 示例可参考 [examples/pci.ids](../examples/pci.ids)。
+
 ```text
 10de  NVIDIA Corporation
 	1eb8  TU104GL [Tesla T4]

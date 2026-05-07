@@ -102,6 +102,29 @@ func TestPCIIDProviderAllowsNilLogger(t *testing.T) {
 	}
 }
 
+func TestExamplePCIIDsMirrorsHardcodedNVIDIAProducts(t *testing.T) {
+	provider := newPCIIDProvider(
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
+		filepath.Join("..", "examples", "pci.ids"),
+	)
+
+	if got := provider.getVendorName(vendorNVIDIA); got != "NVIDIA Corporation" {
+		t.Fatalf("getVendorName() = %q, want %q", got, "NVIDIA Corporation")
+	}
+
+	devices := provider.pciDevices[normalizePCIID(vendorNVIDIA)]
+	if got := len(devices); got != len(nvidiaProducts) {
+		t.Fatalf("examples/pci.ids has %d NVIDIA products, want %d", got, len(nvidiaProducts))
+	}
+
+	for deviceID, want := range nvidiaProducts {
+		if got := provider.getDeviceName(vendorNVIDIA, deviceID); got != want {
+			t.Fatalf("getDeviceName(%q) = %q, want %q", deviceID, got, want)
+		}
+	}
+}
+
 func newTestPCIIDProvider(t *testing.T, content string) *pciIDProvider {
 	t.Helper()
 
