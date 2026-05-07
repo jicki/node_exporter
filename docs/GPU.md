@@ -100,6 +100,38 @@ node_exporter --collector.pcidevice.idsfile=/path/to/pci.ids
 
 该参数同时影响 `pcidevice` 和 `gpu` 的名称解析。自定义路径按 `node_exporter` 进程可见的路径读取，不会再自动拼接 `--path.rootfs`。
 
+### 自定义 `pci.ids` 文件示例
+
+`pci.ids` 中 vendor 行不缩进，device 行需要使用一个 tab 缩进。下面是一个最小示例：
+
+```text
+10de  NVIDIA Corporation
+	1eb8  TU104GL [Tesla T4]
+	2330  GH100 [H100 PCIe]
+1002  Advanced Micro Devices, Inc. [AMD/ATI]
+	744c  Navi 31 [Radeon RX 7900 XTX]
+8086  Intel Corporation
+	56a0  DG2 [Arc A770 Graphics]
+```
+
+如果将上述内容保存为 `/etc/node_exporter/pci.ids`，可以这样启动：
+
+```bash
+node_exporter --collector.pcidevice.idsfile=/etc/node_exporter/pci.ids
+```
+
+当 metrics 中出现：
+
+```text
+vendor_id="0x10de", device_id="0x1eb8"
+```
+
+`gpu` collector 会把它解析为：
+
+```text
+vendor="NVIDIA Corporation", model="TU104GL [Tesla T4]"
+```
+
 ## 查询示例
 
 查看当前导出的 GPU 指标：
