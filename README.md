@@ -131,6 +131,7 @@ exec | Exposes execution statistics. | Dragonfly, FreeBSD
 fibrechannel | Exposes fibre channel information and statistics from `/sys/class/fc_host/`. | Linux
 filefd | Exposes file descriptor statistics from `/proc/sys/fs/file-nr`. | Linux
 filesystem | Exposes filesystem statistics, such as disk space used. | Darwin, Dragonfly, FreeBSD, Linux, OpenBSD
+gpu | Exposes GPU device inventory from PCI sysfs. See [GPU collector](./docs/GPU.md). | Linux
 hwmon | Expose hardware monitoring and sensor data from `/sys/class/hwmon/`. | Linux
 infiniband | Exposes network statistics specific to InfiniBand and Intel OmniPath configurations. | Linux
 ipvs | Exposes IPVS status from `/proc/net/ip_vs` and stats from `/proc/net/ip_vs_stats`. | Linux

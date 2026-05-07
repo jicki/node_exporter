@@ -18,6 +18,8 @@ package collector
 import (
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -39,9 +41,98 @@ func TestGPUCollector(t *testing.T) {
 		t.Fatalf("NewGPUCollector failed: %v", err)
 	}
 
-	// We can't easily run Update() because it tries to read /sys/bus/pci/devices
-	// which might not exist or be empty on the build machine.
-	// But ensuring it builds is a good first step.
+	gpuCollector, ok := c.(*gpuCollector)
+	if !ok {
+		t.Fatalf("NewGPUCollector returned %T, want *gpuCollector", c)
+	}
+	if gpuCollector.resolver.pciProvider == nil {
+		t.Fatal("NewGPUCollector did not initialize pciProvider")
+	}
+}
 
-	_ = c
+func TestGPUCollectorUsesPCIIDsFileFlag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pci.ids")
+	if err := os.WriteFile(path, []byte("10de  NVIDIA Corporation\n\t1eb8  Flag Tesla T4\n"), 0o644); err != nil {
+		t.Fatalf("failed to write pci.ids fixture: %v", err)
+	}
+
+	oldPCIIdsFile := *pciIdsFile
+	*pciIdsFile = path
+	t.Cleanup(func() {
+		*pciIdsFile = oldPCIIdsFile
+	})
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c, err := NewGPUCollector(logger)
+	if err != nil {
+		t.Fatalf("NewGPUCollector failed: %v", err)
+	}
+
+	gpuCollector := c.(*gpuCollector)
+	if got := gpuCollector.resolver.productName(vendorNVIDIA, "0x1eb8"); got != "Flag Tesla T4" {
+		t.Fatalf("productName() = %q, want %q", got, "Flag Tesla T4")
+	}
+}
+
+func TestIsGPUDriverLoaded(t *testing.T) {
+	dir := t.TempDir()
+	driversDir := filepath.Join(dir, "drivers")
+	if err := os.MkdirAll(driversDir, 0o755); err != nil {
+		t.Fatalf("failed to create drivers dir: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		driver string
+		want   bool
+	}{
+		{
+			name:   "native nvidia driver",
+			driver: "nvidia",
+			want:   true,
+		},
+		{
+			name:   "passthrough vfio driver",
+			driver: "vfio-pci",
+			want:   true,
+		},
+		{
+			name:   "non gpu driver",
+			driver: "snd_hda_intel",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			driverPath := filepath.Join(driversDir, tt.driver)
+			if err := os.MkdirAll(driverPath, 0o755); err != nil {
+				t.Fatalf("failed to create driver dir: %v", err)
+			}
+
+			devicePath := filepath.Join(dir, tt.name)
+			if err := os.MkdirAll(devicePath, 0o755); err != nil {
+				t.Fatalf("failed to create device dir: %v", err)
+			}
+			if err := os.Symlink(driverPath, filepath.Join(devicePath, "driver")); err != nil {
+				t.Fatalf("failed to create driver symlink: %v", err)
+			}
+
+			if got := isGPUDriverLoaded(devicePath); got != tt.want {
+				t.Fatalf("isGPUDriverLoaded() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing driver link", func(t *testing.T) {
+		devicePath := filepath.Join(dir, "missing-driver")
+		if err := os.MkdirAll(devicePath, 0o755); err != nil {
+			t.Fatalf("failed to create device dir: %v", err)
+		}
+
+		if isGPUDriverLoaded(devicePath) {
+			t.Fatal("isGPUDriverLoaded() = true, want false")
+		}
+	})
 }

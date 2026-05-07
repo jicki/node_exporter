@@ -53,22 +53,22 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 	if customPath != "" {
 		file, err = os.Open(customPath)
 		if err != nil {
-			p.logger.Debug("Failed to open PCI IDs file", "file", customPath, "error", err)
+			p.debug("Failed to open PCI IDs file", "file", customPath, "error", err)
 			return
 		}
-		p.logger.Debug("Loading PCI IDs from", "file", customPath)
+		p.debug("Loading PCI IDs from", "file", customPath)
 	} else {
 		// Try each possible default path
 		for _, path := range paths {
 			fullPath := rootfsFilePath(path)
 			file, err = os.Open(fullPath)
 			if err == nil {
-				p.logger.Debug("Loading PCI IDs from default path", "path", fullPath)
+				p.debug("Loading PCI IDs from default path", "path", fullPath)
 				break
 			}
 		}
 		if err != nil {
-			p.logger.Debug("Failed to open any default PCI IDs file", "error", err)
+			p.debug("Failed to open any default PCI IDs file", "error", err)
 			return
 		}
 	}
@@ -183,7 +183,7 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 		totalSubsystems += len(subsystems)
 	}
 
-	p.logger.Debug("Loaded PCI device data",
+	p.debug("Loaded PCI device data",
 		"vendors", len(p.pciVendors),
 		"devices", totalDevices,
 		"subsystems", totalSubsystems,
@@ -191,6 +191,12 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 		"subclasses", len(p.pciSubclasses),
 		"progIfs", len(p.pciProgIfs),
 	)
+}
+
+func (p *pciIDProvider) debug(msg string, args ...any) {
+	if p.logger != nil {
+		p.logger.Debug(msg, args...)
+	}
 }
 
 func (p *pciIDProvider) getVendorName(vendorID string) string {
