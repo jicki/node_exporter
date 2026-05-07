@@ -14,10 +14,12 @@
 package collector
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,6 +101,56 @@ func TestPCIIDProviderAllowsNilLogger(t *testing.T) {
 	provider := newPCIIDProvider(nil, nil, path)
 	if got := provider.getVendorName("0x10de"); got != "NVIDIA Corporation" {
 		t.Fatalf("getVendorName() = %q, want %q", got, "NVIDIA Corporation")
+	}
+}
+
+func TestPCIIDProviderLogsCustomFileLoadSuccess(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pci.ids")
+	if err := os.WriteFile(path, []byte("10de  NVIDIA Corporation\n\t1eb8  NVIDIA Tesla T4\n"), 0o644); err != nil {
+		t.Fatalf("failed to write test pci.ids: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	provider := newPCIIDProvider(logger, nil, path)
+	if got := provider.getDeviceName(vendorNVIDIA, "0x1eb8"); got != "NVIDIA Tesla T4" {
+		t.Fatalf("getDeviceName() = %q, want %q", got, "NVIDIA Tesla T4")
+	}
+
+	for _, want := range []string{
+		`"level":"INFO"`,
+		`"msg":"Loaded PCI IDs file"`,
+		`"flag":"--collector.pcidevice.idsfile"`,
+		`"configured_file":"` + path + `"`,
+		`"loaded":true`,
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("expected log to contain %s, got %s", want, logs.String())
+		}
+	}
+}
+
+func TestPCIIDProviderLogsCustomFileLoadFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.ids")
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	provider := newPCIIDProvider(logger, nil, path)
+	if got := provider.getVendorName(vendorNVIDIA); got != "10de" {
+		t.Fatalf("getVendorName() = %q, want %q", got, "10de")
+	}
+
+	for _, want := range []string{
+		`"level":"WARN"`,
+		`"msg":"Failed to load PCI IDs file"`,
+		`"flag":"--collector.pcidevice.idsfile"`,
+		`"configured_file":"` + path + `"`,
+		`"loaded":false`,
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("expected log to contain %s, got %s", want, logs.String())
+		}
 	}
 }
 

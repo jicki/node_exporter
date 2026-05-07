@@ -54,6 +54,12 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 		file, err = os.Open(customPath)
 		if err != nil {
 			p.debug("Failed to open PCI IDs file", "file", customPath, "error", err)
+			p.warn("Failed to load PCI IDs file",
+				"flag", "--collector.pcidevice.idsfile",
+				"configured_file", customPath,
+				"loaded", false,
+				"error", err,
+			)
 			return
 		}
 		p.debug("Loading PCI IDs from", "file", customPath)
@@ -191,11 +197,37 @@ func (p *pciIDProvider) load(paths []string, customPath string) {
 		"subclasses", len(p.pciSubclasses),
 		"progIfs", len(p.pciProgIfs),
 	)
+
+	if customPath != "" {
+		p.info("Loaded PCI IDs file",
+			"flag", "--collector.pcidevice.idsfile",
+			"configured_file", customPath,
+			"loaded", true,
+			"vendors", len(p.pciVendors),
+			"devices", totalDevices,
+			"subsystems", totalSubsystems,
+			"classes", len(p.pciClasses),
+			"subclasses", len(p.pciSubclasses),
+			"progIfs", len(p.pciProgIfs),
+		)
+	}
 }
 
 func (p *pciIDProvider) debug(msg string, args ...any) {
 	if p.logger != nil {
 		p.logger.Debug(msg, args...)
+	}
+}
+
+func (p *pciIDProvider) info(msg string, args ...any) {
+	if p.logger != nil {
+		p.logger.Info(msg, args...)
+	}
+}
+
+func (p *pciIDProvider) warn(msg string, args ...any) {
+	if p.logger != nil {
+		p.logger.Warn(msg, args...)
 	}
 }
 
