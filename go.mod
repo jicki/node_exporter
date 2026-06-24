@@ -18,7 +18,7 @@ require (
 	github.com/mdlayher/ethtool v0.6.0
 	github.com/mdlayher/netlink v1.10.0
 	github.com/mdlayher/wifi v0.7.2
-	github.com/opencontainers/selinux v1.13.1
+	github.com/opencontainers/selinux v1.14.0
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 	github.com/prometheus-community/go-runit v0.1.0
 	github.com/prometheus/client_golang v1.23.2
