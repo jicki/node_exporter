@@ -22,12 +22,6 @@ const (
 	vendorIntel  = "0x8086"
 )
 
-// Known BMC/Management graphics (blacklist)
-var bmcVendors = map[string]bool{
-	"0x1a03": true, // ASPEED
-	"0x102b": true, // Matrox
-}
-
 // NVIDIA device ID to product name mapping (fallback for systems without pci.ids)
 var nvidiaProducts = map[string]string{
 	// Data Center - Tesla

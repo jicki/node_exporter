@@ -28,6 +28,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Known BMC/Management graphics (blacklist)
+var bmcVendors = map[string]bool{
+	"0x1a03": true, // ASPEED
+	"0x102b": true, // Matrox
+}
+
 const maxNVIDIAGPUInfoSize = 64 * 1024
 
 var nvidiaGPUUUIDPattern = regexp.MustCompile(`^GPU-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

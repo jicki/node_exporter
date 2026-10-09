@@ -38,6 +38,10 @@ const (
 	defFSTypesExcluded     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$"
 )
 
+type filesystemLabels struct {
+	device, mountPoint, fsType, mountOptions, superOptions, deviceError, major, minor string
+}
+
 var mountTimeout = kingpin.Flag("collector.filesystem.mount-timeout",
 	"how long to wait for a mount to respond before marking it as stale").
 	Hidden().Default("5s").Duration()

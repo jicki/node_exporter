@@ -46,6 +46,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/node_exporter/collector/utils"
 )
 

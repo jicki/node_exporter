@@ -75,3 +75,37 @@ func TestCustomSysPath(t *testing.T) {
 		t.Errorf("Expected: %s, Got: %s", want, got)
 	}
 }
+
+func TestUdevDataFlag(t *testing.T) {
+	flag := kingpin.CommandLine.GetFlag("path.udev.data")
+	if flag == nil {
+		t.Fatal("path.udev.data flag is missing")
+	}
+	if defaults := flag.Model().Default; len(defaults) != 1 || defaults[0] != "/run/udev/data" {
+		t.Fatalf("Unexpected udev data path default: %v", defaults)
+	}
+
+	for _, test := range []struct {
+		name  string
+		value string
+	}{
+		{name: "default", value: "/run/udev/data"},
+		{name: "custom", value: "../custom/udev"},
+		{name: "empty", value: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// 只解析参数，避免重置其他 collector 的全局参数值。
+			context, err := kingpin.CommandLine.ParseContext([]string{"--path.udev.data=" + test.value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(context.Elements) != 1 {
+				t.Fatalf("Expected one parsed flag, got %d", len(context.Elements))
+			}
+			element := context.Elements[0]
+			if element.Clause != flag || element.Value == nil || *element.Value != test.value {
+				t.Fatalf("Unexpected parsed udev data flag: %+v", element)
+			}
+		})
+	}
+}

@@ -79,10 +79,6 @@ type filesystemCollector struct {
 	logger                        *slog.Logger
 }
 
-type filesystemLabels struct {
-	device, mountPoint, fsType, mountOptions, superOptions, deviceError, major, minor string
-}
-
 type filesystemStats struct {
 	labels            filesystemLabels
 	size, free, avail float64

@@ -69,12 +69,6 @@ var (
 		diskLabelNames, nil,
 	)
 
-	ioTimeSecondsDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, diskSubsystem, "io_time_seconds_total"),
-		"Total seconds spent doing I/Os.",
-		diskLabelNames, nil,
-	)
-
 	readTimeSecondsDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, diskSubsystem, "read_time_seconds_total"),
 		"The total number of seconds spent by all reads.",
