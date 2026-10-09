@@ -35,41 +35,46 @@ ARG_STRING="$*"
 # work out of the box on macOS, use Python as a stream editor.
 
 USE_PYTHON=0
+PYTHON_COMMAND=""
 
+# 使用字节流，避免 Python 3 解码或换行转换改变 fixture 内容。
 PYTHON_CREATE_FILTER=$(cat << 'PCF'
-#!/usr/bin/env python
-
-import re
 import sys
 
-for line in sys.stdin:
-    line = re.sub(r'EOF', r'\EOF', line)
-    line = re.sub(r'NULLBYTE', r'\NULLBYTE', line)
-    line = re.sub('\x00', r'NULLBYTE', line)
-    sys.stdout.write(line)
+input_stream = getattr(sys.stdin, 'buffer', sys.stdin)
+output_stream = getattr(sys.stdout, 'buffer', sys.stdout)
+for line in input_stream:
+    line = line.replace(b'EOF', b'\\EOF')
+    line = line.replace(b'NULLBYTE', b'\\NULLBYTE')
+    line = line.replace(b'\x00', b'NULLBYTE')
+    output_stream.write(line)
 PCF
 )
 
 PYTHON_EXTRACT_FILTER=$(cat << 'PEF'
-#!/usr/bin/env python
-
 import re
 import sys
 
-for line in sys.stdin:
-    line = re.sub(r'(?<!\\)NULLBYTE', '\x00', line)
-    line = re.sub(r'\\NULLBYTE', 'NULLBYTE', line)
-    line = re.sub(r'([^\\])EOF', r'\1', line)
-    line = re.sub(r'\\EOF', 'EOF', line)
-    sys.stdout.write(line)
+input_stream = getattr(sys.stdin, 'buffer', sys.stdin)
+output_stream = getattr(sys.stdout, 'buffer', sys.stdout)
+for line in input_stream:
+    line = re.sub(b'(?<!\\\\)NULLBYTE', b'\x00', line)
+    line = line.replace(b'\\NULLBYTE', b'NULLBYTE')
+    line = re.sub(b'([^\\\\])EOF', b'\\1', line)
+    line = line.replace(b'\\EOF', b'EOF')
+    output_stream.write(line)
 PEF
 )
 
 function test_environment {
     if [[ "$(echo "a" | sed 's/a/\x0/' | wc -c)" -ne 2 ]]; then
         echo "WARNING sed unable to handle null bytes, using Python (slow)."
-        if ! which python >/dev/null; then
-            echo "ERROR Python not found. Aborting."
+        if command -v python3 >/dev/null 2>&1; then
+            PYTHON_COMMAND=python3
+        elif command -v python >/dev/null 2>&1; then
+            PYTHON_COMMAND=python
+        else
+            echo "ERROR Python not found (tried python3 and python). Aborting."
             exit 2
         fi
         USE_PYTHON=1
@@ -224,7 +229,7 @@ function extract {
             # Remove EOF unless preceded by backslash
             # Remove one backslash in front of EOF
             if [ $USE_PYTHON -eq 1 ]; then
-                echo -n "$line" | python -c "$PYTHON_EXTRACT_FILTER" >> "$path"
+                echo -n "$line" | "$PYTHON_COMMAND" -c "$PYTHON_EXTRACT_FILTER" >> "$path"
             else
                 # The repeated pattern makes up for sed's lack of negative
                 # lookbehind assertions (for consecutive null bytes).
@@ -334,7 +339,7 @@ function _create {
             # Add backslash in front of NULLBYTE
             # Replace null byte with NULLBYTE
             if [ $USE_PYTHON -eq 1 ]; then
-                < "$file" python -c "$PYTHON_CREATE_FILTER"
+                < "$file" "$PYTHON_COMMAND" -c "$PYTHON_CREATE_FILTER"
             else
                 < "$file" \
                     sed 's/EOF/\\EOF/g;

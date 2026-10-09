@@ -65,3 +65,14 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 "$(go env GOPATH)/bin/golangci-lint" run .
 Linux 环境运行相关回归测试。`make all` 会按需安装工具、执行 `go mod tidy`，并在
 fixture 需要更新时删除后重新解包 `collector/fixtures/sys` 和 `collector/fixtures/udev`。
 需要保留工作区中的 fixture 时，应在临时副本中解包和测试。
+
+`ttar` 在 `sed` 不支持 NUL 时优先使用 `python3`，其次使用 `python`，无需建立
+全局 `python` 别名。fixture 工具回归命令：
+
+```bash
+bash ./ttar_test.sh
+```
+
+`ttar` 仅用于可信 fixture。现有归档格式不能可靠往返还原反斜线紧接 NUL，
+以及末字节为反斜线且无换行的内容。
+回归脚本通过 Python 3 验证两种解释器命令名；真实 Python 2 的运行兼容性需在其环境另行验证。
