@@ -5,6 +5,10 @@
 * [ENHANCEMENT]
 * [BUGFIX]
 
+## 1.11.2 / 2026-10-09
+
+* [FEATURE] gpu: 为 `node_gpu_info` 增加 NVIDIA GPU `uuid` 标签，不可用时使用空值并保留设备指标。
+
 ## 1.11.1 / 2026-04-07
 
 * [BUGFIX] Fix kernel_hung for no data #3613

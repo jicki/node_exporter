@@ -16,13 +16,21 @@
 package collector
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+const maxNVIDIAGPUInfoSize = 64 * 1024
+
+var nvidiaGPUUUIDPattern = regexp.MustCompile(`^GPU-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type gpuCollector struct {
 	logger   *slog.Logger
@@ -68,6 +76,49 @@ func isGPUDriverLoaded(devicePath string) bool {
 		}
 	}
 	return false
+}
+
+func readNVIDIAGPUUUID(devicePath, busID string) (string, error) {
+	driver, err := os.Readlink(filepath.Join(devicePath, "driver"))
+	if err != nil {
+		return "", fmt.Errorf("读取 GPU 驱动链接: %w", err)
+	}
+	if filepath.Base(driver) != "nvidia" {
+		return "", nil
+	}
+
+	file, err := os.Open(procFilePath(filepath.Join("driver/nvidia/gpus", busID, "information")))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("打开 NVIDIA GPU 信息: %w", err)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxNVIDIAGPUInfoSize+1))
+	if err := errors.Join(readErr, file.Close()); err != nil {
+		return "", fmt.Errorf("读取 NVIDIA GPU 信息: %w", err)
+	}
+	if len(data) > maxNVIDIAGPUInfoSize {
+		return "", fmt.Errorf("NVIDIA GPU 信息超过 %d 字节", maxNVIDIAGPUInfoSize)
+	}
+
+	var uuid string
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "GPU UUID" {
+			continue
+		}
+		if uuid != "" {
+			return "", errors.New("NVIDIA GPU UUID 字段重复")
+		}
+		value = strings.TrimSpace(value)
+		// NVIDIA 标识不保证符合 RFC UUID 的版本和变体位，只校验其文本格式。
+		if !nvidiaGPUUUIDPattern.MatchString(value) {
+			return "", errors.New("NVIDIA GPU UUID 格式无效")
+		}
+		uuid = value
+	}
+	return uuid, nil
 }
 
 func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
@@ -127,6 +178,14 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 
 		busID := entry.Name()
 		productName := c.resolver.productName(vendorID, deviceID)
+		var uuid string
+		if vendorID == vendorNVIDIA {
+			uuid, err = readNVIDIAGPUUUID(devicePath, busID)
+			if err != nil {
+				// UUID 是可选信息，读取失败不能使已有设备清单和数量消失。
+				c.logger.Debug("无法读取 NVIDIA GPU UUID", "device", busID, "error", err)
+			}
+		}
 
 		// Track model count
 		modelCounts[productName]++
@@ -142,11 +201,11 @@ func (c *gpuCollector) Update(ch chan<- prometheus.Metric) error {
 			prometheus.NewDesc(
 				prometheus.BuildFQName(namespace, "gpu", "info"),
 				"Information about the GPU.",
-				[]string{"gpu_id", "vendor", "model", "vendor_id", "device_id"}, nil,
+				[]string{"gpu_id", "vendor", "model", "vendor_id", "device_id", "uuid"}, nil,
 			),
 			prometheus.GaugeValue,
 			1,
-			busID, vendorName, productName, vendorID, deviceID,
+			busID, vendorName, productName, vendorID, deviceID, uuid,
 		))
 	}
 
